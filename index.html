@@ -3,149 +3,407 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Marakami Sync Test V1</title>
+  <meta name="theme-color" content="#111827" />
+  <title>Marakami Classroom Sync V2</title>
   <style>
-    :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;background:#f5f7fb}
     *{box-sizing:border-box}
-    body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px}
-    .card{width:min(760px,100%);background:white;border-radius:24px;padding:24px;box-shadow:0 16px 44px rgba(0,0,0,.1)}
-    h1{margin:0 0 8px;font-size:clamp(28px,5vw,44px)}
-    p{line-height:1.5}.muted{color:#667085}.row{display:flex;gap:12px;flex-wrap:wrap}.grow{flex:1 1 220px}
-    button,input{font:inherit;border-radius:16px;border:1px solid #d0d5dd;padding:14px 16px}
-    button{cursor:pointer;background:#172033;color:#fff;border:0;font-weight:700;min-height:54px}
-    button.secondary{background:#eef2f7;color:#172033}button:disabled{opacity:.45;cursor:not-allowed}
-    input{width:100%;font-size:24px;text-align:center;letter-spacing:.15em;font-weight:800}
-    .panel{margin-top:18px;padding:18px;background:#f8fafc;border-radius:18px}
-    .status{display:inline-flex;align-items:center;gap:8px;font-weight:700}.dot{width:12px;height:12px;border-radius:50%;background:#98a2b3}.dot.ok{background:#12b76a}.dot.bad{background:#f04438}
-    .room{font-size:42px;font-weight:900;letter-spacing:.12em;margin:8px 0}
-    .page{font-size:72px;font-weight:900;text-align:center;padding:20px 0}
-    .big{font-size:20px;flex:1 1 160px}.hide{display:none!important}
-    .log{margin-top:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;white-space:pre-wrap;background:#0b1020;color:#d7e0ff;border-radius:14px;padding:12px;max-height:150px;overflow:auto}
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang HK","Noto Sans TC",sans-serif;background:#0f172a;color:#111827}
+    #app{position:fixed;inset:0;background:#000}
+    #gameFrame{width:100%;height:100%;border:0;background:white;display:block}
+
+    .topbar{position:fixed;z-index:30;top:max(8px,env(safe-area-inset-top));left:10px;right:10px;display:flex;align-items:center;gap:8px;pointer-events:none}
+    .chip,.iconBtn{pointer-events:auto;border:0;border-radius:999px;box-shadow:0 4px 18px rgba(0,0,0,.2);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+    .chip{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.92);padding:8px 12px;font-size:13px;font-weight:800;white-space:nowrap}
+    .dot{width:10px;height:10px;border-radius:50%;background:#94a3b8}.dot.ok{background:#16a34a}.dot.bad{background:#dc2626}.dot.wait{background:#f59e0b}
+    .iconBtn{margin-left:auto;width:42px;height:42px;background:rgba(255,255,255,.94);font-size:20px;cursor:pointer}
+    .topbar.collapsed .chip.extra{display:none}
+
+    .modalWrap{position:fixed;z-index:50;inset:0;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.72);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+    .modal{width:min(680px,100%);max-height:90vh;overflow:auto;background:white;border-radius:26px;padding:24px;box-shadow:0 24px 80px rgba(0,0,0,.35)}
+    .modal h1{font-size:clamp(27px,5vw,42px);margin:0 0 6px}.modal p{line-height:1.55;margin:8px 0;color:#475569}
+    .choices{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}
+    button.action{border:0;border-radius:18px;padding:18px;font:inherit;font-weight:900;font-size:18px;cursor:pointer;min-height:66px;background:#111827;color:white}
+    button.action.secondary{background:#e2e8f0;color:#0f172a}
+    button.action.ghost{background:#f8fafc;color:#0f172a;border:1px solid #cbd5e1}
+    input.roomInput{width:100%;margin-top:14px;padding:15px 16px;border:2px solid #cbd5e1;border-radius:18px;font:inherit;font-size:28px;font-weight:900;text-align:center;letter-spacing:.2em}
+    .hidden{display:none!important}
+    .roomBig{font-size:clamp(44px,10vw,76px);font-weight:1000;letter-spacing:.16em;text-align:center;margin:10px 0;color:#0f172a}
+    .notice{margin-top:14px;padding:12px 14px;border-radius:15px;background:#f1f5f9;color:#334155;font-size:14px;line-height:1.5}
+    .notice.warn{background:#fff7ed;color:#9a3412}
+    .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.row>*{flex:1 1 180px}
+    .debug{margin-top:14px;background:#0b1020;color:#dbeafe;border-radius:14px;padding:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;max-height:140px;overflow:auto;white-space:pre-wrap}
+
+    #toast{position:fixed;z-index:70;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);background:rgba(15,23,42,.94);color:white;padding:10px 14px;border-radius:999px;font-weight:800;font-size:13px;opacity:0;pointer-events:none;transition:.2s}
+    #toast.show{opacity:1}
+
+    @media (max-width:620px){.choices{grid-template-columns:1fr}.modal{padding:20px;border-radius:22px}.chip{font-size:12px;padding:7px 10px}}
   </style>
 </head>
 <body>
-  <main class="card">
-    <h1>🌼 Marakami Sync Test V1</h1>
-    <p class="muted">先測試「iPad ↔ 電子白板」即時同步。成功後先接入原本遊戲。</p>
+  <div id="app">
+    <iframe id="gameFrame" src="https://pltsang2.github.io/marakami/" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+  </div>
 
-    <section id="setup" class="panel">
+  <div id="topbar" class="topbar hidden">
+    <div class="chip"><span id="dot" class="dot wait"></span><span id="statusText">連線中</span></div>
+    <div class="chip extra">房間 <strong id="roomChip">----</strong></div>
+    <div class="chip extra"><span id="roleChip">-</span> · <span id="eventChip">0</span> 次同步</div>
+    <button id="collapseBtn" class="iconBtn" title="收起/展開同步狀態">☰</button>
+  </div>
+
+  <section id="setupModal" class="modalWrap">
+    <div class="modal">
+      <h1>🌼 Marakami Sync V2</h1>
+      <p>今次直接載入原本《村上隆的花花世界》，將 iPad 的實際觸控操作同步到電子白板。</p>
+      <div class="choices">
+        <button id="hostBtn" class="action">🖥️ 電子白板<br>建立房間</button>
+        <button id="studentBtn" class="action secondary">📱 學生 iPad<br>加入房間</button>
+      </div>
+      <div id="joinBox" class="hidden">
+        <input id="roomInput" class="roomInput" inputmode="numeric" maxlength="4" placeholder="輸入 4 位房間碼" />
+        <button id="joinBtn" class="action" style="width:100%;margin-top:10px">加入同步</button>
+      </div>
+      <div class="notice">測試重點：先試 <strong>翻頁／按鈕／點擊</strong>，再試遊戲內可拖拉或畫畫的頁面。兩部裝置最好都由呢個 V2 頁面進入，而唔係一部直接開原版。</div>
+    </div>
+  </section>
+
+  <section id="roomModal" class="modalWrap hidden">
+    <div class="modal">
+      <h1>房間已建立</h1>
+      <p>喺學生 iPad 打開同一個 V2 網址，選「學生 iPad」，再輸入以下房間碼：</p>
+      <div id="roomBig" class="roomBig">----</div>
+      <div id="originCheck" class="notice">正在檢查原版遊戲是否可以由同步頁控制…</div>
       <div class="row">
-        <button id="hostBtn" class="big">🖥️ 電子白板：建立房間</button>
-        <button id="studentBtn" class="big secondary">📱 iPad：加入房間</button>
+        <button id="startHostBtn" class="action">開始同步</button>
+        <button id="newRoomBtn" class="action ghost">換房間碼</button>
       </div>
-      <div id="joinBox" class="hide" style="margin-top:14px">
-        <input id="roomInput" inputmode="numeric" maxlength="4" placeholder="輸入 4 位房間碼" />
-        <button id="joinBtn" style="width:100%;margin-top:10px">加入</button>
-      </div>
-    </section>
+      <div class="notice warn">如果白板需要播放聲效，請在「開始同步」之後先在白板遊戲畫面<strong>親手點一下</strong>，讓瀏覽器允許音訊。</div>
+    </div>
+  </section>
 
-    <section id="session" class="panel hide">
-      <div class="status"><span id="dot" class="dot"></span><span id="statusText">連線中…</span></div>
-      <div class="muted" style="margin-top:10px">房間碼</div>
-      <div id="roomCode" class="room">----</div>
-      <div class="muted">模式：<strong id="roleText">-</strong></div>
+  <section id="errorModal" class="modalWrap hidden">
+    <div class="modal">
+      <h1>⚠️ 未能控制原版遊戲</h1>
+      <p id="errorText"></p>
+      <div class="notice warn">呢個 V2 的快速方案需要同步頁同原版遊戲都係 <strong>pltsang2.github.io</strong>。請將本檔案放喺你同一個 GitHub Pages 帳戶下的 repo，再用該 GitHub Pages 網址開啟。</div>
+      <button id="closeErrorBtn" class="action" style="width:100%;margin-top:14px">知道</button>
+    </div>
+  </section>
 
-      <div class="page">第 <span id="pageNo">1</span> 頁</div>
-      <div class="row">
-        <button id="prevBtn" class="big secondary">◀ 上一頁</button>
-        <button id="nextBtn" class="big">下一頁 ▶</button>
-      </div>
-      <div class="row" style="margin-top:12px">
-        <button id="flowerBtn" class="big">🌼 學生動作測試</button>
-        <button id="resetBtn" class="big secondary">↺ 重設</button>
-      </div>
-      <div id="flowerMsg" style="text-align:center;font-size:26px;font-weight:800;margin-top:16px;min-height:40px"></div>
-      <div id="log" class="log"></div>
-    </section>
-  </main>
+  <div id="toast"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
+    // ====== CONFIG ======
     const SUPABASE_URL = 'https://sewveuojxsoqqkjubvrj.supabase.co';
     const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_am9k2R7dSgrPTRwT_WWwzQ_uKDZ_Rae';
-    const client = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    const TARGET_URL = 'https://pltsang2.github.io/marakami/';
+    // ====================
 
-    let channel = null;
+    const client = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    const frame = document.getElementById('gameFrame');
     let role = null;
     let room = null;
-    let state = { page: 1, flowerCount: 0 };
+    let channel = null;
+    let frameDoc = null;
+    let frameWin = null;
+    let eventCount = 0;
+    let installed = false;
+    let lastPointerMoveAt = 0;
+    let pendingMove = null;
+    let moveTimer = null;
+    let suppressScrollSend = false;
 
     const $ = id => document.getElementById(id);
-    const log = msg => { const t = new Date().toLocaleTimeString(); $('log').textContent = `[${t}] ${msg}\n` + $('log').textContent; };
-    const render = () => {
-      $('pageNo').textContent = state.page;
-      $('flowerMsg').textContent = state.flowerCount ? `🌼 收到學生動作 × ${state.flowerCount}` : '';
+    const setStatus = (text, type='wait') => {
+      $('statusText').textContent = text;
+      $('dot').className = 'dot ' + type;
     };
-    const setStatus = (text, type='') => { $('statusText').textContent = text; $('dot').className = 'dot' + (type ? ' ' + type : ''); };
+    const toast = msg => {
+      $('toast').textContent = msg;
+      $('toast').classList.add('show');
+      clearTimeout(toast._t);
+      toast._t = setTimeout(()=>$('toast').classList.remove('show'),1700);
+    };
+    const randomRoom = () => String(Math.floor(1000 + Math.random()*9000));
 
-    function randomRoom(){ return String(Math.floor(1000 + Math.random()*9000)); }
+    function cssEscape(s){
+      return (window.CSS && CSS.escape) ? CSS.escape(String(s)) : String(s).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+    }
+
+    function cssPath(el){
+      if (!el || el.nodeType !== 1) return null;
+      if (el.id) return '#' + cssEscape(el.id);
+      const parts = [];
+      let cur = el;
+      while (cur && cur.nodeType === 1 && cur !== frameDoc.documentElement) {
+        let part = cur.tagName.toLowerCase();
+        if (cur.classList && cur.classList.length) {
+          const safeClasses = [...cur.classList].filter(c => /^[a-zA-Z_-][a-zA-Z0-9_-]*$/.test(c)).slice(0,2);
+          if (safeClasses.length) part += safeClasses.map(c=>'.'+cssEscape(c)).join('');
+        }
+        const parent = cur.parentElement;
+        if (parent) {
+          const sameTag = [...parent.children].filter(x => x.tagName === cur.tagName);
+          if (sameTag.length > 1) part += `:nth-of-type(${sameTag.indexOf(cur)+1})`;
+        }
+        parts.unshift(part);
+        cur = parent;
+        if (parts.length >= 7) break;
+      }
+      return parts.join(' > ');
+    }
+
+    function targetPacket(target, clientX, clientY){
+      let rect = null;
+      try { rect = target && target.getBoundingClientRect ? target.getBoundingClientRect() : null; } catch(e){}
+      return {
+        selector: cssPath(target),
+        tag: target?.tagName || null,
+        rx: rect && rect.width ? (clientX - rect.left) / rect.width : null,
+        ry: rect && rect.height ? (clientY - rect.top) / rect.height : null,
+        vx: frameWin?.innerWidth ? clientX / frameWin.innerWidth : 0.5,
+        vy: frameWin?.innerHeight ? clientY / frameWin.innerHeight : 0.5
+      };
+    }
+
+    async function send(event, payload){
+      if (!channel) return;
+      try {
+        await channel.send({ type:'broadcast', event, payload:{...payload, from:role, at:Date.now()} });
+      } catch(e) {
+        console.warn('sync send failed', e);
+      }
+    }
+
+    function sendPointerNow(packet){
+      send('input-event', packet);
+      eventCount++;
+      $('eventChip').textContent = eventCount;
+    }
+
+    function queuePointerMove(packet){
+      pendingMove = packet;
+      const now = performance.now();
+      const wait = Math.max(0, 32 - (now-lastPointerMoveAt)); // ~30 fps
+      if (moveTimer) return;
+      moveTimer = setTimeout(()=>{
+        moveTimer = null;
+        if (pendingMove) {
+          lastPointerMoveAt = performance.now();
+          const p = pendingMove;
+          pendingMove = null;
+          sendPointerNow(p);
+        }
+      }, wait);
+    }
+
+    function installFrameCapture(){
+      try {
+        frameWin = frame.contentWindow;
+        frameDoc = frame.contentDocument || frameWin.document;
+        void frameDoc.body; // force same-origin check
+      } catch(err) {
+        showOriginError(err);
+        return false;
+      }
+      if (!frameDoc || !frameDoc.body) return false;
+      if (installed) return true;
+      installed = true;
+
+      const pointerHandler = e => {
+        if (!e.isTrusted || !channel) return;
+        const packet = {
+          kind:'pointer',
+          type:e.type,
+          pointerType:e.pointerType || 'mouse',
+          pointerId:e.pointerId || 1,
+          button:e.button ?? 0,
+          buttons:e.buttons ?? 0,
+          pressure:e.pressure ?? 0.5,
+          ...targetPacket(e.target, e.clientX, e.clientY)
+        };
+        if (e.type === 'pointermove') queuePointerMove(packet); else sendPointerNow(packet);
+      };
+      ['pointerdown','pointermove','pointerup','pointercancel'].forEach(t=>frameDoc.addEventListener(t,pointerHandler,true));
+
+      frameDoc.addEventListener('click', e=>{
+        if (!e.isTrusted || !channel) return;
+        sendPointerNow({kind:'click',type:'click',button:e.button??0,...targetPacket(e.target,e.clientX,e.clientY)});
+      },true);
+
+      const inputHandler = e=>{
+        if (!e.isTrusted || !channel) return;
+        const t=e.target;
+        if (!t || !('value' in t || 'checked' in t)) return;
+        sendPointerNow({kind:'form',type:e.type,selector:cssPath(t),value:('value' in t)?t.value:null,checked:('checked' in t)?!!t.checked:null,selectedIndex:('selectedIndex' in t)?t.selectedIndex:null});
+      };
+      frameDoc.addEventListener('input',inputHandler,true);
+      frameDoc.addEventListener('change',inputHandler,true);
+
+      frameWin.addEventListener('scroll',()=>{
+        if (suppressScrollSend || !channel) return;
+        send('scroll-event',{kind:'window-scroll',x:frameWin.scrollX/(Math.max(1,frameDoc.documentElement.scrollWidth-frameWin.innerWidth)),y:frameWin.scrollY/(Math.max(1,frameDoc.documentElement.scrollHeight-frameWin.innerHeight))});
+      },{passive:true});
+
+      return true;
+    }
+
+    function findTarget(p){
+      let target = null;
+      if (p.selector) {
+        try { target = frameDoc.querySelector(p.selector); } catch(e){}
+      }
+      if (!target) {
+        const x = (p.vx ?? .5) * frameWin.innerWidth;
+        const y = (p.vy ?? .5) * frameWin.innerHeight;
+        target = frameDoc.elementFromPoint(x,y);
+      }
+      return target || frameDoc.body;
+    }
+
+    function replayInput(p){
+      if (!frameDoc || !frameWin) return;
+      const target = findTarget(p);
+      if (!target) return;
+      const rect = target.getBoundingClientRect();
+      const x = Number.isFinite(p.rx) ? rect.left + Math.max(0,Math.min(1,p.rx))*Math.max(1,rect.width) : (p.vx??.5)*frameWin.innerWidth;
+      const y = Number.isFinite(p.ry) ? rect.top + Math.max(0,Math.min(1,p.ry))*Math.max(1,rect.height) : (p.vy??.5)*frameWin.innerHeight;
+
+      try {
+        if (p.kind === 'form') {
+          if ('value' in target && p.value !== null) target.value = p.value;
+          if ('checked' in target && p.checked !== null) target.checked = p.checked;
+          if ('selectedIndex' in target && p.selectedIndex !== null) target.selectedIndex = p.selectedIndex;
+          target.dispatchEvent(new Event(p.type || 'input',{bubbles:true,cancelable:true}));
+          return;
+        }
+        if (p.kind === 'click') {
+          target.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:frameWin,clientX:x,clientY:y,button:p.button??0}));
+          return;
+        }
+        if (p.kind === 'pointer') {
+          const init={bubbles:true,cancelable:true,composed:true,view:frameWin,clientX:x,clientY:y,pointerId:p.pointerId||1,pointerType:p.pointerType||'touch',button:p.button??0,buttons:p.buttons??0,pressure:p.pressure??.5,isPrimary:true};
+          if (frameWin.PointerEvent) target.dispatchEvent(new frameWin.PointerEvent(p.type,init));
+          else {
+            const map={pointerdown:'mousedown',pointermove:'mousemove',pointerup:'mouseup'};
+            if (map[p.type]) target.dispatchEvent(new frameWin.MouseEvent(map[p.type],init));
+          }
+        }
+      } catch(err) {
+        console.warn('replay failed',err,p);
+      }
+    }
+
+    function replayScroll(p){
+      if (!frameDoc || !frameWin || p.kind!=='window-scroll') return;
+      const maxX=Math.max(0,frameDoc.documentElement.scrollWidth-frameWin.innerWidth);
+      const maxY=Math.max(0,frameDoc.documentElement.scrollHeight-frameWin.innerHeight);
+      suppressScrollSend=true;
+      frameWin.scrollTo((p.x||0)*maxX,(p.y||0)*maxY);
+      setTimeout(()=>suppressScrollSend=false,80);
+    }
+
+    function showOriginError(err){
+      $('errorText').textContent = '瀏覽器阻止同步頁讀取原版遊戲。通常代表你而家開啟 V2 的網址唔係 pltsang2.github.io 同一個網域。錯誤：' + (err?.message || err || 'unknown');
+      $('errorModal').classList.remove('hidden');
+    }
+
+    function checkOriginAccess(){
+      try {
+        frameWin = frame.contentWindow;
+        frameDoc = frame.contentDocument || frameWin.document;
+        const ok = !!frameDoc.body;
+        $('originCheck').textContent = ok ? '✅ 已確認：同步頁可以控制原版 Marakami。' : '⏳ 原版遊戲仍在載入…';
+        $('originCheck').className='notice';
+        return ok;
+      } catch(err) {
+        $('originCheck').textContent='❌ 無法控制原版遊戲：請確認 V2 放在 pltsang2.github.io 的另一個 repo。';
+        $('originCheck').className='notice warn';
+        return false;
+      }
+    }
 
     async function connect(roomCode, selectedRole){
-      role = selectedRole;
-      room = roomCode;
-      $('setup').classList.add('hide');
-      $('session').classList.remove('hide');
-      $('roomCode').textContent = room;
-      $('roleText').textContent = role === 'host' ? '電子白板 / Host' : 'iPad / Student';
-      setStatus('連線中…');
+      role=selectedRole; room=roomCode;
+      $('roomChip').textContent=room;
+      $('roleChip').textContent=role==='host'?'白板':'iPad';
+      $('topbar').classList.remove('hidden');
+      setStatus('連線中','wait');
 
-      channel = client.channel(`marakami-room-${room}`, {
-        config: { broadcast: { self: false } }
-      });
-
+      channel=client.channel(`marakami-v2-${room}`,{config:{broadcast:{self:false}}});
       channel
-        .on('broadcast', { event: 'state' }, ({ payload }) => {
-          if (!payload || !payload.state) return;
-          state = payload.state;
-          render();
-          log(`收到 state：page=${state.page}, flower=${state.flowerCount}`);
+        .on('broadcast',{event:'input-event'},({payload})=>{
+          if (!payload || payload.from===role) return;
+          replayInput(payload);
+          eventCount++; $('eventChip').textContent=eventCount;
         })
-        .on('broadcast', { event: 'sync-request' }, async () => {
-          if (role === 'host') {
-            log('收到同步要求，回傳目前狀態');
-            await sendState();
-          }
+        .on('broadcast',{event:'scroll-event'},({payload})=>{
+          if (!payload || payload.from===role) return;
+          replayScroll(payload);
         })
-        .subscribe(async status => {
-          log(`Realtime 狀態：${status}`);
-          if (status === 'SUBSCRIBED') {
-            setStatus('已連線', 'ok');
-            if (role === 'student') {
-              await channel.send({ type:'broadcast', event:'sync-request', payload:{ at:Date.now() } });
-              log('已要求 Host 傳送目前狀態');
-            } else {
-              await sendState();
-            }
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-            setStatus(`連線失敗：${status}`, 'bad');
+        .on('broadcast',{event:'reset-game'},()=>{
+          installed=false;
+          frame.src=TARGET_URL + (TARGET_URL.includes('?')?'&':'?') + 'syncReset=' + Date.now();
+          toast('兩邊遊戲已重設');
+        })
+        .on('broadcast',{event:'hello'},({payload})=>{
+          if (role==='host' && payload?.from==='student') toast('📱 學生 iPad 已加入');
+        })
+        .subscribe(async status=>{
+          if(status==='SUBSCRIBED'){
+            setStatus('已連線','ok');
+            await send('hello',{});
+          }else if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)){
+            setStatus('連線失敗','bad');
           }
         });
     }
 
-    async function sendState(){
-      if (!channel) return;
-      const res = await channel.send({ type:'broadcast', event:'state', payload:{ state, at:Date.now(), from:role } });
-      log(`傳送 state：${res}`);
+    function beginSession(){
+      $('setupModal').classList.add('hidden');
+      $('roomModal').classList.add('hidden');
+      setTimeout(()=>{
+        if (!installFrameCapture()) setTimeout(installFrameCapture,1200);
+      },200);
     }
 
-    async function changeState(mutator){
-      mutator(state);
-      render();
-      await sendState();
-    }
+    frame.addEventListener('load',()=>{
+      installed=false;
+      setTimeout(()=>{
+        try { installFrameCapture(); } catch(e){}
+      },250);
+    });
 
-    $('hostBtn').onclick = () => connect(randomRoom(), 'host');
-    $('studentBtn').onclick = () => $('joinBox').classList.remove('hide');
-    $('joinBtn').onclick = () => {
-      const code = $('roomInput').value.trim();
-      if (!/^\d{4}$/.test(code)) return alert('請輸入 4 位數字房間碼');
-      connect(code, 'student');
+    $('hostBtn').onclick=()=>{
+      room=randomRoom(); role='host';
+      $('setupModal').classList.add('hidden');
+      $('roomModal').classList.remove('hidden');
+      $('roomBig').textContent=room;
+      setTimeout(checkOriginAccess,500);
     };
-    $('prevBtn').onclick = () => changeState(s => s.page = Math.max(1, s.page - 1));
-    $('nextBtn').onclick = () => changeState(s => s.page += 1);
-    $('flowerBtn').onclick = () => changeState(s => s.flowerCount += 1);
-    $('resetBtn').onclick = () => changeState(s => { s.page = 1; s.flowerCount = 0; });
-    render();
+    $('newRoomBtn').onclick=()=>{room=randomRoom();$('roomBig').textContent=room;};
+    $('startHostBtn').onclick=async()=>{
+      if(!room) room=randomRoom();
+      await connect(room,'host');
+      beginSession();
+    };
+    $('studentBtn').onclick=()=>$('joinBox').classList.remove('hidden');
+    $('joinBtn').onclick=async()=>{
+      const code=$('roomInput').value.trim();
+      if(!/^\d{4}$/.test(code)) return alert('請輸入 4 位數字房間碼');
+      await connect(code,'student');
+      beginSession();
+    };
+    $('collapseBtn').onclick=()=>$('topbar').classList.toggle('collapsed');
+    $('closeErrorBtn').onclick=()=>$('errorModal').classList.add('hidden');
+
+    // Query-string convenience: ?role=student&room=1234
+    const qp=new URLSearchParams(location.search);
+    if(qp.get('role')==='student' && /^\d{4}$/.test(qp.get('room')||'')){
+      $('roomInput').value=qp.get('room');
+      $('joinBox').classList.remove('hidden');
+    }
   </script>
 </body>
 </html>
