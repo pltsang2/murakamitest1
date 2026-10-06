@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-HK">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Marakami Sync Test V1</title>
+  <style>
+    :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;background:#f5f7fb}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px}
+    .card{width:min(760px,100%);background:white;border-radius:24px;padding:24px;box-shadow:0 16px 44px rgba(0,0,0,.1)}
+    h1{margin:0 0 8px;font-size:clamp(28px,5vw,44px)}
+    p{line-height:1.5}.muted{color:#667085}.row{display:flex;gap:12px;flex-wrap:wrap}.grow{flex:1 1 220px}
+    button,input{font:inherit;border-radius:16px;border:1px solid #d0d5dd;padding:14px 16px}
+    button{cursor:pointer;background:#172033;color:#fff;border:0;font-weight:700;min-height:54px}
+    button.secondary{background:#eef2f7;color:#172033}button:disabled{opacity:.45;cursor:not-allowed}
+    input{width:100%;font-size:24px;text-align:center;letter-spacing:.15em;font-weight:800}
+    .panel{margin-top:18px;padding:18px;background:#f8fafc;border-radius:18px}
+    .status{display:inline-flex;align-items:center;gap:8px;font-weight:700}.dot{width:12px;height:12px;border-radius:50%;background:#98a2b3}.dot.ok{background:#12b76a}.dot.bad{background:#f04438}
+    .room{font-size:42px;font-weight:900;letter-spacing:.12em;margin:8px 0}
+    .page{font-size:72px;font-weight:900;text-align:center;padding:20px 0}
+    .big{font-size:20px;flex:1 1 160px}.hide{display:none!important}
+    .log{margin-top:14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;white-space:pre-wrap;background:#0b1020;color:#d7e0ff;border-radius:14px;padding:12px;max-height:150px;overflow:auto}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>🌼 Marakami Sync Test V1</h1>
+    <p class="muted">先測試「iPad ↔ 電子白板」即時同步。成功後先接入原本遊戲。</p>
+
+    <section id="setup" class="panel">
+      <div class="row">
+        <button id="hostBtn" class="big">🖥️ 電子白板：建立房間</button>
+        <button id="studentBtn" class="big secondary">📱 iPad：加入房間</button>
+      </div>
+      <div id="joinBox" class="hide" style="margin-top:14px">
+        <input id="roomInput" inputmode="numeric" maxlength="4" placeholder="輸入 4 位房間碼" />
+        <button id="joinBtn" style="width:100%;margin-top:10px">加入</button>
+      </div>
+    </section>
+
+    <section id="session" class="panel hide">
+      <div class="status"><span id="dot" class="dot"></span><span id="statusText">連線中…</span></div>
+      <div class="muted" style="margin-top:10px">房間碼</div>
+      <div id="roomCode" class="room">----</div>
+      <div class="muted">模式：<strong id="roleText">-</strong></div>
+
+      <div class="page">第 <span id="pageNo">1</span> 頁</div>
+      <div class="row">
+        <button id="prevBtn" class="big secondary">◀ 上一頁</button>
+        <button id="nextBtn" class="big">下一頁 ▶</button>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button id="flowerBtn" class="big">🌼 學生動作測試</button>
+        <button id="resetBtn" class="big secondary">↺ 重設</button>
+      </div>
+      <div id="flowerMsg" style="text-align:center;font-size:26px;font-weight:800;margin-top:16px;min-height:40px"></div>
+      <div id="log" class="log"></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = 'https://sewveuojxsoqqkjubvrj.supabase.co';
+    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_am9k2R7dSgrPTRwT_WWwzQ_uKDZ_Rae';
+    const client = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+    let channel = null;
+    let role = null;
+    let room = null;
+    let state = { page: 1, flowerCount: 0 };
+
+    const $ = id => document.getElementById(id);
+    const log = msg => { const t = new Date().toLocaleTimeString(); $('log').textContent = `[${t}] ${msg}\n` + $('log').textContent; };
+    const render = () => {
+      $('pageNo').textContent = state.page;
+      $('flowerMsg').textContent = state.flowerCount ? `🌼 收到學生動作 × ${state.flowerCount}` : '';
+    };
+    const setStatus = (text, type='') => { $('statusText').textContent = text; $('dot').className = 'dot' + (type ? ' ' + type : ''); };
+
+    function randomRoom(){ return String(Math.floor(1000 + Math.random()*9000)); }
+
+    async function connect(roomCode, selectedRole){
+      role = selectedRole;
+      room = roomCode;
+      $('setup').classList.add('hide');
+      $('session').classList.remove('hide');
+      $('roomCode').textContent = room;
+      $('roleText').textContent = role === 'host' ? '電子白板 / Host' : 'iPad / Student';
+      setStatus('連線中…');
+
+      channel = client.channel(`marakami-room-${room}`, {
+        config: { broadcast: { self: false } }
+      });
+
+      channel
+        .on('broadcast', { event: 'state' }, ({ payload }) => {
+          if (!payload || !payload.state) return;
+          state = payload.state;
+          render();
+          log(`收到 state：page=${state.page}, flower=${state.flowerCount}`);
+        })
+        .on('broadcast', { event: 'sync-request' }, async () => {
+          if (role === 'host') {
+            log('收到同步要求，回傳目前狀態');
+            await sendState();
+          }
+        })
+        .subscribe(async status => {
+          log(`Realtime 狀態：${status}`);
+          if (status === 'SUBSCRIBED') {
+            setStatus('已連線', 'ok');
+            if (role === 'student') {
+              await channel.send({ type:'broadcast', event:'sync-request', payload:{ at:Date.now() } });
+              log('已要求 Host 傳送目前狀態');
+            } else {
+              await sendState();
+            }
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            setStatus(`連線失敗：${status}`, 'bad');
+          }
+        });
+    }
+
+    async function sendState(){
+      if (!channel) return;
+      const res = await channel.send({ type:'broadcast', event:'state', payload:{ state, at:Date.now(), from:role } });
+      log(`傳送 state：${res}`);
+    }
+
+    async function changeState(mutator){
+      mutator(state);
+      render();
+      await sendState();
+    }
+
+    $('hostBtn').onclick = () => connect(randomRoom(), 'host');
+    $('studentBtn').onclick = () => $('joinBox').classList.remove('hide');
+    $('joinBtn').onclick = () => {
+      const code = $('roomInput').value.trim();
+      if (!/^\d{4}$/.test(code)) return alert('請輸入 4 位數字房間碼');
+      connect(code, 'student');
+    };
+    $('prevBtn').onclick = () => changeState(s => s.page = Math.max(1, s.page - 1));
+    $('nextBtn').onclick = () => changeState(s => s.page += 1);
+    $('flowerBtn').onclick = () => changeState(s => s.flowerCount += 1);
+    $('resetBtn').onclick = () => changeState(s => { s.page = 1; s.flowerCount = 0; });
+    render();
+  </script>
+</body>
+</html>
