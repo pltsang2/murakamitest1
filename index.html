@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#111827" />
-  <title>Marakami Classroom Sync V2</title>
+  <title>Marakami Classroom Sync V3</title>
   <style>
     *{box-sizing:border-box}
     html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang HK","Noto Sans TC",sans-serif;background:#0f172a;color:#111827}
@@ -53,8 +53,8 @@
 
   <section id="setupModal" class="modalWrap">
     <div class="modal">
-      <h1>🌼 Marakami Sync V2</h1>
-      <p>今次直接載入原本《村上隆的花花世界》，將 iPad 的實際觸控操作同步到電子白板。</p>
+      <h1>🌼 Marakami Sync V3</h1>
+      <p>V3 專門加強 iPad 手指連續操作：填色、拖拉、拉開畫面，以及原有翻頁／按鈕同步。</p>
       <div class="choices">
         <button id="hostBtn" class="action">🖥️ 電子白板<br>建立房間</button>
         <button id="studentBtn" class="action secondary">📱 學生 iPad<br>加入房間</button>
@@ -63,7 +63,7 @@
         <input id="roomInput" class="roomInput" inputmode="numeric" maxlength="4" placeholder="輸入 4 位房間碼" />
         <button id="joinBtn" class="action" style="width:100%;margin-top:10px">加入同步</button>
       </div>
-      <div class="notice">測試重點：先試 <strong>翻頁／按鈕／點擊</strong>，再試遊戲內可拖拉或畫畫的頁面。兩部裝置最好都由呢個 V2 頁面進入，而唔係一部直接開原版。</div>
+      <div class="notice">測試重點：先確認翻頁仍然同步，再直接試 <strong>填色</strong> 同 <strong>拉開畫面</strong>。V3 會同步原生 touchstart / touchmove / touchend，而唔只係 pointer events。兩部裝置都要由呢個 V3 頁面進入。</div>
     </div>
   </section>
 
@@ -85,7 +85,7 @@
     <div class="modal">
       <h1>⚠️ 未能控制原版遊戲</h1>
       <p id="errorText"></p>
-      <div class="notice warn">呢個 V2 的快速方案需要同步頁同原版遊戲都係 <strong>pltsang2.github.io</strong>。請將本檔案放喺你同一個 GitHub Pages 帳戶下的 repo，再用該 GitHub Pages 網址開啟。</div>
+      <div class="notice warn">呢個 V3 的快速方案需要同步頁同原版遊戲都係 <strong>pltsang2.github.io</strong>。請將本檔案放喺你同一個 GitHub Pages 帳戶下的 repo，再用該 GitHub Pages 網址開啟。</div>
       <button id="closeErrorBtn" class="action" style="width:100%;margin-top:14px">知道</button>
     </div>
   </section>
@@ -113,6 +113,10 @@
     let pendingMove = null;
     let moveTimer = null;
     let suppressScrollSend = false;
+    let touchActiveUntil = 0;
+    let lastTouchMoveAt = 0;
+    let pendingTouchMove = null;
+    let touchMoveTimer = null;
 
     const $ = id => document.getElementById(id);
     const setStatus = (text, type='wait') => {
@@ -198,11 +202,53 @@
       }, wait);
     }
 
+    function pointPacketFromXY(target, clientX, clientY){
+      return targetPacket(target, clientX, clientY);
+    }
+
+    function touchListToPayload(list){
+      return Array.from(list || []).map(t=>({
+        identifier:t.identifier ?? 0,
+        clientX:t.clientX,
+        clientY:t.clientY,
+        pageX:t.pageX,
+        pageY:t.pageY,
+        screenX:t.screenX,
+        screenY:t.screenY,
+        radiusX:t.radiusX ?? 1,
+        radiusY:t.radiusY ?? 1,
+        rotationAngle:t.rotationAngle ?? 0,
+        force:t.force ?? .5
+      }));
+    }
+
+    function sendTouchNow(packet){
+      send('input-event', packet);
+      eventCount++;
+      $('eventChip').textContent = eventCount;
+    }
+
+    function queueTouchMove(packet){
+      pendingTouchMove = packet;
+      const now = performance.now();
+      const wait = Math.max(0, 16 - (now-lastTouchMoveAt)); // up to ~60fps for drawing/drag
+      if (touchMoveTimer) return;
+      touchMoveTimer = setTimeout(()=>{
+        touchMoveTimer = null;
+        if (pendingTouchMove) {
+          lastTouchMoveAt = performance.now();
+          const p = pendingTouchMove;
+          pendingTouchMove = null;
+          sendTouchNow(p);
+        }
+      }, wait);
+    }
+
     function installFrameCapture(){
       try {
         frameWin = frame.contentWindow;
         frameDoc = frame.contentDocument || frameWin.document;
-        void frameDoc.body; // force same-origin check
+        void frameDoc.body;
       } catch(err) {
         showOriginError(err);
         return false;
@@ -211,8 +257,28 @@
       if (installed) return true;
       installed = true;
 
+      // iPad / touch-first path. This is the key V3 change.
+      const touchHandler = e => {
+        if (!e.isTrusted || !channel) return;
+        touchActiveUntil = Date.now() + 900;
+        const primary = e.changedTouches?.[0] || e.touches?.[0];
+        if (!primary) return;
+        const packet = {
+          kind:'touch',
+          type:e.type,
+          touches:touchListToPayload(e.touches),
+          targetTouches:touchListToPayload(e.targetTouches),
+          changedTouches:touchListToPayload(e.changedTouches),
+          ...pointPacketFromXY(e.target, primary.clientX, primary.clientY)
+        };
+        if (e.type === 'touchmove') queueTouchMove(packet); else sendTouchNow(packet);
+      };
+      ['touchstart','touchmove','touchend','touchcancel'].forEach(t=>frameDoc.addEventListener(t,touchHandler,true));
+
+      // Pointer path for desktop/touchscreen browsers. Ignore compatibility pointer events just after real touch.
       const pointerHandler = e => {
         if (!e.isTrusted || !channel) return;
+        if (Date.now() < touchActiveUntil && (e.pointerType === 'touch' || e.pointerType === 'pen')) return;
         const packet = {
           kind:'pointer',
           type:e.type,
@@ -227,8 +293,22 @@
       };
       ['pointerdown','pointermove','pointerup','pointercancel'].forEach(t=>frameDoc.addEventListener(t,pointerHandler,true));
 
+      // Some older/custom game code listens to mouse events only.
+      const mouseHandler = e => {
+        if (!e.isTrusted || !channel) return;
+        if (Date.now() < touchActiveUntil) return;
+        const packet={
+          kind:'mouse',type:e.type,button:e.button??0,buttons:e.buttons??0,
+          ...targetPacket(e.target,e.clientX,e.clientY)
+        };
+        if (e.type==='mousemove') queuePointerMove(packet); else sendPointerNow(packet);
+      };
+      ['mousedown','mousemove','mouseup'].forEach(t=>frameDoc.addEventListener(t,mouseHandler,true));
+
       frameDoc.addEventListener('click', e=>{
         if (!e.isTrusted || !channel) return;
+        // suppress synthetic compatibility click generated by a touch; touch sequence already sent
+        if (Date.now() < touchActiveUntil) return;
         sendPointerNow({kind:'click',type:'click',button:e.button??0,...targetPacket(e.target,e.clientX,e.clientY)});
       },true);
 
@@ -270,6 +350,29 @@
       const x = Number.isFinite(p.rx) ? rect.left + Math.max(0,Math.min(1,p.rx))*Math.max(1,rect.width) : (p.vx??.5)*frameWin.innerWidth;
       const y = Number.isFinite(p.ry) ? rect.top + Math.max(0,Math.min(1,p.ry))*Math.max(1,rect.height) : (p.vy??.5)*frameWin.innerHeight;
 
+      function makeTouch(t){
+        const tx = Number.isFinite(t.clientX) ? t.clientX : x;
+        const ty = Number.isFinite(t.clientY) ? t.clientY : y;
+        if (frameWin.Touch) {
+          try {
+            return new frameWin.Touch({
+              identifier:t.identifier ?? 0,
+              target,
+              clientX:tx, clientY:ty,
+              pageX:Number.isFinite(t.pageX)?t.pageX:tx,
+              pageY:Number.isFinite(t.pageY)?t.pageY:ty,
+              screenX:Number.isFinite(t.screenX)?t.screenX:tx,
+              screenY:Number.isFinite(t.screenY)?t.screenY:ty,
+              radiusX:t.radiusX ?? 1,
+              radiusY:t.radiusY ?? 1,
+              rotationAngle:t.rotationAngle ?? 0,
+              force:t.force ?? .5
+            });
+          } catch(e) {}
+        }
+        return {identifier:t.identifier??0,target,clientX:tx,clientY:ty,pageX:t.pageX??tx,pageY:t.pageY??ty,screenX:t.screenX??tx,screenY:t.screenY??ty};
+      }
+
       try {
         if (p.kind === 'form') {
           if ('value' in target && p.value !== null) target.value = p.value;
@@ -279,7 +382,31 @@
           return;
         }
         if (p.kind === 'click') {
-          target.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:frameWin,clientX:x,clientY:y,button:p.button??0}));
+          target.dispatchEvent(new frameWin.MouseEvent('click',{bubbles:true,cancelable:true,view:frameWin,clientX:x,clientY:y,button:p.button??0}));
+          return;
+        }
+        if (p.kind === 'touch') {
+          const touches=(p.touches||[]).map(makeTouch);
+          const targetTouches=(p.targetTouches||[]).map(makeTouch);
+          const changedTouches=(p.changedTouches||[]).map(makeTouch);
+          let ev=null;
+          if (frameWin.TouchEvent) {
+            try {
+              ev=new frameWin.TouchEvent(p.type,{bubbles:true,cancelable:true,composed:true,view:frameWin,touches,targetTouches,changedTouches});
+            } catch(e) {}
+          }
+          if (ev) {
+            target.dispatchEvent(ev);
+          } else {
+            // Fallback for browsers that refuse constructing TouchEvent.
+            const map={touchstart:'mousedown',touchmove:'mousemove',touchend:'mouseup',touchcancel:'mouseup'};
+            const mt=map[p.type];
+            if (mt) target.dispatchEvent(new frameWin.MouseEvent(mt,{bubbles:true,cancelable:true,view:frameWin,clientX:x,clientY:y,buttons:mt==='mousemove'?1:0,button:0}));
+          }
+          return;
+        }
+        if (p.kind === 'mouse') {
+          target.dispatchEvent(new frameWin.MouseEvent(p.type,{bubbles:true,cancelable:true,view:frameWin,clientX:x,clientY:y,button:p.button??0,buttons:p.buttons??0}));
           return;
         }
         if (p.kind === 'pointer') {
@@ -318,7 +445,7 @@
         $('originCheck').className='notice';
         return ok;
       } catch(err) {
-        $('originCheck').textContent='❌ 無法控制原版遊戲：請確認 V2 放在 pltsang2.github.io 的另一個 repo。';
+        $('originCheck').textContent='❌ 無法控制原版遊戲：請確認 V3 放在 pltsang2.github.io 的另一個 repo。';
         $('originCheck').className='notice warn';
         return false;
       }
@@ -331,7 +458,7 @@
       $('topbar').classList.remove('hidden');
       setStatus('連線中','wait');
 
-      channel=client.channel(`marakami-v2-${room}`,{config:{broadcast:{self:false}}});
+      channel=client.channel(`marakami-v3-${room}`,{config:{broadcast:{self:false}}});
       channel
         .on('broadcast',{event:'input-event'},({payload})=>{
           if (!payload || payload.from===role) return;
