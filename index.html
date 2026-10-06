@@ -32,6 +32,14 @@
   @media(max-width:620px){.sync-grid{grid-template-columns:1fr}.sync-card{padding:19px;border-radius:20px}#sync-bar .sync-extra{display:none}}
 </style>
 
+
+<style id="v6-teacher-controls-css">
+body[data-sync-role="student"] #murakami-big-book .mb-prev,
+body[data-sync-role="student"] #murakami-big-book .mb-next,
+body[data-sync-role="student"] #murakami-big-book .mb-reset,
+body[data-sync-role="student"] #murakami-big-book .mb-finish{display:none!important}
+#murakami-big-book .mb-reset{background:#f0e1c8;color:#6b412d;border:2px solid #caa77a!important}
+</style>
 </head><body>
 
 <section id="sync-setup">
@@ -141,14 +149,15 @@ const pages=[
 {art:'cover',title:'花花的故事，\n換你來畫。',text:'今天，我們認識了村上隆，也發現了重複的圖案。\nF班的花園，開滿了大家的想像。'}
 ];
 let page=0,active=false,sound=true,audio=null,cleanup=()=>{},flipTimer,voiceTime=0;
-let state={paint:{mask:'',percent:0,done:false},real:{stamps:[],done:false},scroll:{left:0,right:0,value:0,done:false},murakami:{stamps:[],done:false},garden:{stamps:[],done:false}};
-const syncRuntime={paintApply:null,scrollApply:null};
-function makeSnapshot(){return {version:4,page,active,sound,state:JSON.parse(JSON.stringify(state))};}
+let state={paint:{mask:'',percent:0,done:false,gen:0},real:{stamps:[],done:false,gen:0},scroll:{left:0,right:0,value:0,done:false,gen:0},murakami:{stamps:[],done:false,gen:0},garden:{stamps:[],done:false,gen:0}};
+const syncRuntime={paintApply:null,scrollApply:null,stampApply:null};
+function makeSnapshot(){return {version:6,page,active,sound,state:JSON.parse(JSON.stringify(state))};}
 const pictures={};Object.entries(assets).forEach(([k,src])=>{const image=new Image();image.src=src;pictures[k]=image;});
 const leave=document.createElement('button');leave.type='button';leave.className='mb-nav v4-return';leave.textContent='返回故事';leave.hidden=true;q('.mb-actions').insertBefore(leave,q('.mb-next'));leave.onclick=()=>{active=false;render();save();};
 const finish=document.createElement('button');finish.type='button';finish.className='mb-finish';finish.textContent='老師：完成創作';finish.hidden=true;q('.mb-actions').insertBefore(finish,q('.mb-next'));
-function restore(s){const x=s?.privateContent;if(!x||![3,4].includes(x.version))return;if(Number.isInteger(x.page)&&x.page>=0&&x.page<9)page=x.page;active=x.active===true;sound=x.sound!==false;const n=x.state;if(!n)return;for(const key of ['real','murakami','garden']){if(n[key])state[key]={stamps:Array.isArray(n[key].stamps)?n[key].stamps.filter(t=>Array.isArray(t)&&t.length===6&&t.every(Number.isFinite)).slice(0,120):[],done:!!n[key].done};}if(n.paint)state.paint={mask:typeof n.paint.mask==='string'?n.paint.mask.slice(0,800):'',percent:Math.max(0,Math.min(100,Number(n.paint.percent)||0)),done:!!n.paint.done};if(n.scroll){const clamp=v=>Math.max(0,Math.min(1,Number(v)||0)),l=clamp(n.scroll.left??n.scroll.value),r=clamp(n.scroll.right??n.scroll.value);state.scroll={left:l,right:r,value:(l+r)/2,done:l>=1&&r>=1};}}
-function save(){const snapshot=makeSnapshot();if(window.openai?.setWidgetState)window.openai.setWidgetState({modelContent:{book:'村上隆的花花世界',version:4,spread:page,title:pages[page].title,activity:pages[page].activity||'閱讀',paintPercent:state.paint.percent,scrollPercent:Math.round(state.scroll.value*100)},privateContent:snapshot}).catch(()=>{});window.__marakamiSync?.onLocalSnapshot?.(snapshot);}
+const resetBtn=document.createElement('button');resetBtn.type='button';resetBtn.className='mb-tool mb-reset';resetBtn.textContent='↻ 重新創作';resetBtn.hidden=true;q('.mb-tools').append(resetBtn);
+function restore(s){const x=s?.privateContent;if(!x||![3,4,5,6].includes(x.version))return;if(Number.isInteger(x.page)&&x.page>=0&&x.page<9)page=x.page;active=x.active===true;sound=x.sound!==false;const n=x.state;if(!n)return;for(const key of ['real','murakami','garden']){if(n[key])state[key]={stamps:Array.isArray(n[key].stamps)?n[key].stamps.filter(t=>Array.isArray(t)&&t.length>=6&&t.slice(0,6).every(Number.isFinite)).slice(0,120):[],done:!!n[key].done,gen:Math.max(0,Number(n[key].gen)||0)};}if(n.paint)state.paint={mask:typeof n.paint.mask==='string'?n.paint.mask.slice(0,800):'',percent:Math.max(0,Math.min(100,Number(n.paint.percent)||0)),done:!!n.paint.done,gen:Math.max(0,Number(n.paint.gen)||0)};if(n.scroll){const clamp=v=>Math.max(0,Math.min(1,Number(v)||0)),l=clamp(n.scroll.left??n.scroll.value),r=clamp(n.scroll.right??n.scroll.value);state.scroll={left:l,right:r,value:(l+r)/2,done:!!n.scroll.done||(l>=1&&r>=1),gen:Math.max(0,Number(n.scroll.gen)||0)};}}
+function save(){const snapshot=makeSnapshot();if(window.openai?.setWidgetState)window.openai.setWidgetState({modelContent:{book:'村上隆的花花世界',version:6,spread:page,title:pages[page].title,activity:pages[page].activity||'閱讀',paintPercent:state.paint.percent,scrollPercent:Math.round(state.scroll.value*100)},privateContent:snapshot}).catch(()=>{});window.__marakamiSync?.onLocalSnapshot?.(snapshot);}
 function context(){try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();return audio;}catch(e){q('.mb-sound').textContent='聲效未能啟用';return null;}}
 function tone(kind='tap'){
 if(!sound)return;const now=performance.now();if((kind==='brush'||kind==='roll')&&now-voiceTime<95)return;voiceTime=now;const a=context();if(!a)return;
@@ -176,40 +185,66 @@ function draw(){v.clearRect(0,0,512,512);v.globalCompositeOperation='source-over
 function encode(){const c=document.createElement('canvas');c.width=c.height=64;const k=c.getContext('2d');k.drawImage(mask,0,0,64,64);const d=k.getImageData(0,0,64,64).data,bytes=new Uint8Array(512);for(let i=0;i<4096;i++)if(d[i*4+3]>100)bytes[i>>3]|=1<<(i%8);st.mask=btoa(String.fromCharCode(...bytes));}
 function check(force=false){if(st.done){st.percent=100;progressLabel();return;}if(!force&&performance.now()-lastCheck<150)return;lastCheck=performance.now();const d=m.getImageData(0,0,512,512).data;let count=0;for(const index of target)if(d[index]>100)count++;const fraction=target.length?count/target.length:0;st.percent=Math.min(99,Math.round(fraction*100));if(fraction>=.985&&!st.done){st.done=true;st.percent=100;tone('finish');spark(50,45);draw();}progressLabel();}
 function mark(x,y,px=x,py=y){m.strokeStyle='#fff';m.lineWidth=57;m.lineCap='round';m.lineJoin='round';m.beginPath();m.moveTo(px,py);m.lineTo(x,y);m.stroke();m.fillStyle='#fff';m.beginPath();m.arc(x,y,28.5,0,Math.PI*2);m.fill();draw();check();tone('brush');}
-syncRuntime.paintApply=segments=>{if(!ready||st.done||!Array.isArray(segments))return;for(const g of segments){if(!Array.isArray(g)||g.length!==4)continue;mark(Number(g[0])||0,Number(g[1])||0,Number(g[2])||0,Number(g[3])||0);}};
+syncRuntime.paintApply=(segments,gen)=>{if(!ready||st.done||gen!==st.gen||!Array.isArray(segments))return;for(const g of segments){if(!Array.isArray(g)||g.length!==4)continue;mark(Number(g[0])||0,Number(g[1])||0,Number(g[2])||0,Number(g[3])||0);}};
 function point(e){const b=view.getBoundingClientRect();return[(e.clientX-b.left)/b.width*512,(e.clientY-b.top)/b.height*512];}
-view.onpointerdown=e=>{if(!ready||st.done)return;e.preventDefault();view.setPointerCapture(e.pointerId);const p=point(e);pointers.set(e.pointerId,p);mark(...p);window.__marakamiSync?.onLocalPaintSegment?.([p[0],p[1],p[0],p[1]]);};
-view.onpointermove=e=>{const before=pointers.get(e.pointerId);if(!before||st.done)return;e.preventDefault();const p=point(e);mark(p[0],p[1],before[0],before[1]);window.__marakamiSync?.onLocalPaintSegment?.([p[0],p[1],before[0],before[1]]);pointers.set(e.pointerId,p);};
+view.onpointerdown=e=>{if(!ready||st.done)return;e.preventDefault();view.setPointerCapture(e.pointerId);const p=point(e);pointers.set(e.pointerId,p);mark(...p);window.__marakamiSync?.onLocalPaintSegment?.([p[0],p[1],p[0],p[1]],st.gen);};
+view.onpointermove=e=>{const before=pointers.get(e.pointerId);if(!before||st.done)return;e.preventDefault();const p=point(e);mark(p[0],p[1],before[0],before[1]);window.__marakamiSync?.onLocalPaintSegment?.([p[0],p[1],before[0],before[1]],st.gen);pointers.set(e.pointerId,p);};
 const release=e=>{if(!pointers.has(e.pointerId))return;pointers.delete(e.pointerId);check(true);encode();save();};view.onpointerup=release;view.onpointercancel=release;view.onlostpointercapture=release;
 const init=()=>{if(!alive)return;s.drawImage(pictures.flower,0,0,512,512);const d=s.getImageData(0,0,512,512).data;for(let y=0;y<512;y+=4)for(let x=0;x<512;x+=4){const i=(y*512+x)*4+3;if(d[i]>120&&Math.hypot(x-256,y-256)>142)target.push(i);}m.fillStyle='#fff';m.beginPath();m.arc(256,256,140,0,7);m.fill();if(st.mask){try{const bytes=atob(st.mask);for(let i=0;i<4096;i++)if(bytes.charCodeAt(i>>3)&(1<<(i%8)))m.fillRect(i%64*8,Math.floor(i/64)*8,8,8);}catch(e){st.mask='';}}ready=true;draw();progressLabel();};if(pictures.flower.complete&&pictures.flower.naturalWidth)init();else pictures.flower.decode().then(init).catch(()=>{status.textContent='花朵載入失敗，請重新開啟預覽';});progressLabel();cleanup=()=>{alive=false;if(ready){encode();}pointers.clear();if(syncRuntime.paintApply)syncRuntime.paintApply=null;};
 }
+
+function petalColor(seed,index,palette){return palette[(Math.abs(seed)+index)%palette.length];}
+function pseudo(seed){const x=Math.sin(seed*12.9898+78.233)*43758.5453;return x-Math.floor(x);}
+function drawCircleFace(ctx,r,seed){ctx.save();ctx.fillStyle='#ffd552';ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.lineWidth=Math.max(1.5,r*.06);ctx.strokeStyle='#6f4a18';ctx.stroke();const eyeY=-r*.15,eyeX=r*.33,eyeR=r*.08;ctx.fillStyle='#3e2a14';ctx.beginPath();ctx.arc(-eyeX,eyeY,eyeR,0,Math.PI*2);ctx.arc(eyeX,eyeY,eyeR,0,Math.PI*2);ctx.fill();ctx.lineWidth=Math.max(1.4,r*.07);ctx.lineCap='round';ctx.beginPath();ctx.arc(0,r*.07,r*.42,0,Math.PI,false);ctx.strokeStyle='#8f2f2f';ctx.stroke();if(pseudo(seed)>.55){ctx.lineWidth=Math.max(1,r*.04);ctx.beginPath();ctx.arc(0,r*.03,r*.30,0,Math.PI,false);ctx.strokeStyle='rgba(255,255,255,.45)';ctx.stroke();}ctx.restore();}
+function drawMurakamiFlower(ctx,width,seed,variant){const petals=[10,12,14,16,8,18][variant%6],outer=width*.5,inner=width*.23,baseR=width*.115;const palettes=[['#ff5f8f','#ffb347','#ffe66d','#8fe388','#67d5ff','#7f92ff','#b784ff'],['#ff6f61','#ffd166','#06d6a0','#4cc9f0','#4361ee','#f72585','#fcbf49'],['#fd79a8','#e84393','#fdcb6e','#55efc4','#74b9ff','#a29bfe','#ffeaa7'],['#ff7675','#fab1a0','#ffeaa7','#81ecec','#74b9ff','#a29bfe','#fd79a8']][variant%4];ctx.save();for(let i=0;i<petals;i++){const a=Math.PI*2*i/petals-Math.PI/2;const r1=inner*(variant%2?1.08:.95),r2=outer*(.88+((i+variant)%3)*.05);ctx.save();ctx.rotate(a);ctx.fillStyle=petalColor(seed+variant*7,i,palettes);ctx.beginPath();ctx.moveTo(0,r1*.15);ctx.bezierCurveTo(r1*.55,-r1*.25,r2*.18,-r2*.78,0,-r2);ctx.bezierCurveTo(-r2*.18,-r2*.78,-r1*.55,-r1*.25,0,r1*.15);ctx.closePath();ctx.fill();ctx.lineWidth=Math.max(1,width*.018);ctx.strokeStyle='rgba(110,65,27,.35)';ctx.stroke();ctx.restore();}drawCircleFace(ctx,baseR,seed);if(variant===4){ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=Math.max(1,width*.012);ctx.beginPath();ctx.arc(0,0,outer*.93,0,Math.PI*2);ctx.stroke();}if(variant===5){ctx.fillStyle='rgba(255,255,255,.18)';for(let i=0;i<6;i++){ctx.beginPath();ctx.arc(Math.cos(i*Math.PI/3)*outer*.36,Math.sin(i*Math.PI/3)*outer*.36,width*.03,0,Math.PI*2);ctx.fill();}}ctx.restore();}
+function drawNaturalFlower(ctx,width,seed,kind){const variant=(kind-10)%6;ctx.save();switch(variant){case 0:{const petals=12,or=width*.48,ir=width*.2;for(let i=0;i<petals;i++){ctx.save();ctx.rotate(Math.PI*2*i/petals);ctx.fillStyle=['#fff4d6','#fff7ea','#ffecc2'][i%3];ctx.beginPath();ctx.ellipse(0,-or*.63,width*.09,or*.24,0,0,Math.PI*2);ctx.fill();ctx.restore();}ctx.fillStyle='#f3b93a';ctx.beginPath();ctx.arc(0,0,ir,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#9b6a1b';ctx.lineWidth=width*.02;ctx.stroke();break;}case 1:{for(let i=0;i<5;i++){ctx.save();ctx.rotate(Math.PI*2*i/5);ctx.fillStyle=['#ff9fba','#ffbfd0','#ffcfe0','#f48fb1'][i%4];ctx.beginPath();ctx.moveTo(0,-width*.08);ctx.bezierCurveTo(width*.18,-width*.34,width*.26,-width*.07,0,width*.2);ctx.bezierCurveTo(-width*.26,-width*.07,-width*.18,-width*.34,0,-width*.08);ctx.fill();ctx.restore();}ctx.fillStyle='#ffd166';ctx.beginPath();ctx.arc(0,0,width*.14,0,Math.PI*2);ctx.fill();break;}case 2:{for(let i=0;i<8;i++){ctx.save();ctx.rotate(Math.PI*2*i/8+Math.PI/8);ctx.fillStyle=['#b7c0ff','#9fa8ff','#d7dbff'][i%3];ctx.beginPath();ctx.moveTo(0,-width*.03);ctx.lineTo(width*.09,-width*.33);ctx.lineTo(0,-width*.48);ctx.lineTo(-width*.09,-width*.33);ctx.closePath();ctx.fill();ctx.restore();}ctx.fillStyle='#ffe082';ctx.beginPath();ctx.arc(0,0,width*.11,0,Math.PI*2);ctx.fill();break;}case 3:{for(let layer=0;layer<2;layer++){const petals=14-layer*4;for(let i=0;i<petals;i++){ctx.save();ctx.rotate(Math.PI*2*i/petals+layer*.1);ctx.fillStyle=layer?['#ffcc66','#ffbf47','#ffd98c'][i%3]:['#f59f00','#ffb703','#ffd166'][i%3];ctx.beginPath();ctx.ellipse(0,-width*(layer?0.22:0.3),width*.05,width*(layer?0.16:0.2),0,0,Math.PI*2);ctx.fill();ctx.restore();}}ctx.fillStyle='#6b4f2a';ctx.beginPath();ctx.arc(0,0,width*.14,0,Math.PI*2);ctx.fill();break;}case 4:{for(let i=0;i<6;i++){ctx.save();ctx.rotate(Math.PI*2*i/6);ctx.fillStyle=['#8ad1ff','#5bc0eb','#9fe6ff'][i%3];ctx.beginPath();ctx.ellipse(0,-width*.22,width*.08,width*.2,0,0,Math.PI*2);ctx.fill();ctx.restore();}ctx.fillStyle='#fff4a8';ctx.beginPath();ctx.arc(0,0,width*.12,0,Math.PI*2);ctx.fill();break;}default:{for(let i=0;i<18;i++){ctx.save();ctx.rotate(Math.PI*2*i/18);ctx.fillStyle=['#ff6b6b','#ff8787','#ffadad'][i%3];ctx.beginPath();ctx.ellipse(0,-width*.26,width*.04,width*.19,0,0,Math.PI*2);ctx.fill();ctx.restore();}ctx.fillStyle='#ffd166';ctx.beginPath();ctx.arc(0,0,width*.1,0,Math.PI*2);ctx.fill();break;}}ctx.restore();}
+function drawDecorativeStamp(ctx,t,width){const [x,y,size,hue,angle,kind]=t;const seed=(kind+1)*9973 + hue*13 + angle*17 + size*19 + x*23 + y*29;ctx.save();ctx.rotate(angle*Math.PI/180);if(kind>=100){drawMurakamiFlower(ctx,width,seed,kind-100);}else if(kind>=10){drawNaturalFlower(ctx,width,seed,kind);}ctx.restore();}
+function chooseKind(type){const natural=[0,1,2,3,10,11,12,13,14,15];const muras=[100,101,102,103,104,105];if(type==='real')return natural[Math.floor(Math.random()*natural.length)];if(type==='murakami')return muras[Math.floor(Math.random()*muras.length)];const pool=[...natural,...muras];return pool[Math.floor(Math.random()*pool.length)];}
+
 function stampGame(type){
 const st=state[type],label=el('div','v3-label');label.textContent=type==='real'?'大自然的花':type==='murakami'?'笑臉花創作室':'F班的花園';const surface=el('div','v3-surface'),canvas=el('canvas','v3-stamp-canvas',surface),empty=el('div','v3-empty',surface);canvas.setAttribute('role','img');canvas.setAttribute('aria-label','拍拍大畫布，在拍到的位置種下花朵');empty.textContent=type==='garden'?'拍拍這裏，種下 F班的花':'拍一下，這裏就開一朵花';const c=canvas.getContext('2d');let alive=true,W=1,H=1;
-function drawStamp(t){const[x,y,size,hue,angle,kind]=t;c.save();c.translate(x/1000*W,y/1000*H);c.rotate(angle*Math.PI/180);c.filter='hue-rotate('+hue+'deg)';const width=size/1000*Math.min(W,H)*1.8;if(kind===4){if(pictures.flower.complete)c.drawImage(pictures.flower,-width/2,-width/2,width,width);}else if(pictures['real-flowers'].complete){const image=pictures['real-flowers'],cw=image.naturalWidth/2,ch=image.naturalHeight/2;c.drawImage(image,kind%2*cw,Math.floor(kind/2)*ch,cw,ch,-width/2,-width/2,width,width);}c.restore();}
-function draw(){const b=surface.getBoundingClientRect();W=Math.max(1,surface.clientWidth);H=Math.max(1,surface.clientHeight);const dpr=Math.min(2,window.devicePixelRatio||1);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,W,H);for(const t of st.stamps)drawStamp(t);empty.hidden=st.stamps.length>0;}
+function drawStamp(t){const[x,y,size,hue,angle,kind]=t;c.save();c.translate(x/1000*W,y/1000*H);const width=size/1000*Math.min(W,H)*1.8;if(kind>=100||kind>=10){drawDecorativeStamp(c,t,width);}else if(kind>=0){c.rotate(angle*Math.PI/180);c.filter='hue-rotate('+hue+'deg)';if(pictures['real-flowers'].complete){const image=pictures['real-flowers'],cw=image.naturalWidth/2,ch=image.naturalHeight/2;c.drawImage(image,kind%2*cw,Math.floor(kind/2)*ch,cw,ch,-width/2,-width/2,width,width);}c.filter='none';}c.restore();}
+function draw(){W=Math.max(1,surface.clientWidth);H=Math.max(1,surface.clientHeight);const dpr=Math.min(2,window.devicePixelRatio||1);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,W,H);for(const t of st.stamps)drawStamp(t);empty.hidden=st.stamps.length>0;}
 function message(){cue(type==='real'?'第 2 位同學':type==='murakami'?'第 5、6 位同學 · 輪流拍花':'第 7 位同學 · F班的花園',st.done?'創作完成！一起欣賞花朵的形狀和重複。':st.stamps.length>=120?'花朵已鋪滿畫布，請老師按「完成創作」。':type==='real'?'真花外形・想像配色｜拍哪裏，花就在哪裏出現。':'拍哪裏，花就在哪裏出現；由老師按「完成創作」。');}
-canvas.onpointerdown=e=>{if(st.done||st.stamps.length>=120)return;e.preventDefault();const b=canvas.getBoundingClientRect(),x=Math.round(Math.max(0,Math.min(1000,(e.clientX-b.left)/b.width*1000))),y=Math.round(Math.max(0,Math.min(1000,(e.clientY-b.top)/b.height*1000)));const kind=type==='real'?Math.floor(Math.random()*4):type==='murakami'?4:Math.floor(Math.random()*5);const size=175+Math.floor(Math.random()*216),hue=Math.floor(Math.random()*360),angle=Math.floor(Math.random()*61)-30;const t=[x,y,size,hue,angle,kind];st.stamps.push(t);drawStamp(t);empty.hidden=true;tone(type);message();save();};
+function stampKey(t){return Array.isArray(t)?t.slice(0,6).join('|'):'';}
+function addStamp(t,playTone=true,notify=false){if(!Array.isArray(t)||t.length<6||st.done||st.stamps.length>=120)return false;const key=stampKey(t);if(st.stamps.some(s=>stampKey(s)===key))return false;st.stamps.push(t);drawStamp(t);empty.hidden=true;if(playTone)tone(type);message();if(notify)window.__marakamiSync?.onLocalStamp?.(type,t,st.gen);return true;}
+canvas.onpointerdown=e=>{if(st.done||st.stamps.length>=120)return;e.preventDefault();const b=canvas.getBoundingClientRect(),x=Math.round(Math.max(0,Math.min(1000,(e.clientX-b.left)/b.width*1000))),y=Math.round(Math.max(0,Math.min(1000,(e.clientY-b.top)/b.height*1000)));const kind=chooseKind(type);const size=175+Math.floor(Math.random()*216),hue=Math.floor(Math.random()*360),angle=Math.floor(Math.random()*61)-30;const t=[x,y,size,hue,angle,kind];if(addStamp(t,true,true))save();};
+syncRuntime.stampApply=(incomingType,t,gen)=>{if(incomingType!==type||gen!==st.gen)return;addStamp(t,false,false);};
 if(st.done){const seal=el('div','v3-seal',surface);seal.textContent=type==='garden'?'F班・完成':'創作完成';}
-const observer=new ResizeObserver(draw);observer.observe(surface);Promise.all([pictures.flower.decode(),pictures['real-flowers'].decode()]).then(()=>{if(alive)draw();}).catch(()=>{});draw();message();cleanup=()=>{alive=false;observer.disconnect();};
+const observer=new ResizeObserver(draw);observer.observe(surface);Promise.all([pictures.flower.decode(),pictures['real-flowers'].decode()]).then(()=>{if(alive)draw();}).catch(()=>{});draw();message();cleanup=()=>{alive=false;observer.disconnect();if(syncRuntime.stampApply)syncRuntime.stampApply=null;};
 }
 function scrollGame(){
 const st=state.scroll,label=el('div','v3-scroll-progress'),scene=el('div','v3-scroll-stage'),art=el('img','v3-scroll-art',scene);art.src=assets['flower-scroll'];art.alt='滿滿笑臉花的想像長卷作品';const handles={},hints={},drags=new Map();
 for(const side of ['left','right']){const b=el('button','v3-roller v4-'+side,scene);b.type='button';b.setAttribute('aria-label',side==='left'?'左邊同學：向左拉開卷軸':'右邊同學：向右拉開卷軸');handles[side]=b;hints[side]=el('span','v3-roller-hint',b);hints[side].textContent=side==='left'?'← 拉':'拉 →';}
 function draw(){const l=38-33*st.left,r=62+33*st.right;art.style.clipPath='inset(0 '+((95-r)/90*100)+'% 0 '+((l-5)/90*100)+'%)';handles.left.style.left=l+'%';handles.right.style.left=r+'%';for(const side of ['left','right']){hints[side].hidden=st[side]>=1;handles[side].setAttribute('aria-disabled',String(st[side]>=1));}label.textContent='左 '+Math.round(st.left*100)+'% ・右 '+Math.round(st.right*100)+'%';cue('第 3、4 位同學 · 一人一邊',st.done?'兩邊一起完成！整幅花花長卷打開了。':'左邊向左拉，右邊向右拉；兩位同學可以同時拉。');}
-function setValue(side,value){st[side]=Math.max(st[side],Math.min(1,value));if(st[side]>=.995)st[side]=1;st.value=(st.left+st.right)/2;const justFinished=st.left===1&&st.right===1&&!st.done;if(justFinished){st.done=true;tone('finish');spark(50,40);}else tone('roll');draw();window.__marakamiSync?.onLocalScroll?.({left:st.left,right:st.right,value:st.value,done:st.done});if(justFinished)save();}
+function setValue(side,value){st[side]=Math.max(st[side],Math.min(1,value));if(st[side]>=.995)st[side]=1;st.value=(st.left+st.right)/2;const justFinished=st.left===1&&st.right===1&&!st.done;if(justFinished){st.done=true;tone('finish');spark(50,40);}else tone('roll');draw();window.__marakamiSync?.onLocalScroll?.({left:st.left,right:st.right,value:st.value,done:st.done},st.gen);if(justFinished)save();}
 for(const side of ['left','right']){const b=handles[side];b.onpointerdown=e=>{if(st[side]>=1||[...drags.values()].some(d=>d.side===side))return;e.preventDefault();b.setPointerCapture(e.pointerId);drags.set(e.pointerId,{side,x:e.clientX,value:st[side],width:scene.getBoundingClientRect().width});};b.onpointermove=e=>{const d=drags.get(e.pointerId);if(!d||d.side!==side)return;e.preventDefault();setValue(side,d.value+(e.clientX-d.x)*(side==='left'?-1:1)/(d.width*.33));};const release=e=>{if(drags.get(e.pointerId)?.side===side){drags.delete(e.pointerId);save();}};b.onpointerup=release;b.onpointercancel=release;b.onlostpointercapture=release;b.onkeydown=e=>{if(e.key===(side==='left'?'ArrowLeft':'ArrowRight')&&st[side]<1){e.preventDefault();setValue(side,st[side]+.06);save();}};}
-syncRuntime.scrollApply=p=>{if(!p)return;const clamp=v=>Math.max(0,Math.min(1,Number(v)||0));st.left=clamp(p.left);st.right=clamp(p.right);st.value=(st.left+st.right)/2;st.done=!!p.done||(st.left>=1&&st.right>=1);draw();};
+syncRuntime.scrollApply=(p,gen)=>{if(!p||gen!==st.gen)return;const clamp=v=>Math.max(0,Math.min(1,Number(v)||0));st.left=clamp(p.left);st.right=clamp(p.right);st.value=(st.left+st.right)/2;st.done=!!p.done||(st.left>=1&&st.right>=1);draw();};
 draw();cleanup=()=>{drags.clear();if(syncRuntime.scrollApply)syncRuntime.scrollApply=null;};
 }
+
+function resetActivity(type=pages[page].activity,forcedGen=null,notify=true){
+if(!type)return;const current=state[type];const nextGen=forcedGen==null?((Number(current?.gen)||0)+1):Math.max(0,Number(forcedGen)||0);
+if(type==='paint')state.paint={mask:'',percent:0,done:false,gen:nextGen};
+else if(type==='scroll')state.scroll={left:0,right:0,value:0,done:false,gen:nextGen};
+else if(['real','murakami','garden'].includes(type))state[type]={stamps:[],done:false,gen:nextGen};
+active=true;render();if(notify){tone('tap');window.__marakamiSync?.onLocalReset?.(type,nextGen);save();}}
+function updateTeacherControls(){const student=document.body.dataset.syncRole==='student';resetBtn.hidden=!active||!pages[page].activity||student;if(student){q('.mb-prev').disabled=true;q('.mb-next').disabled=true;}else{q('.mb-prev').disabled=page===0;q('.mb-next').disabled=false;}}
+window.__marakamiSetSyncRole=role=>{document.body.dataset.syncRole=role||'solo';updateTeacherControls();};
+resetBtn.onclick=()=>{if(document.body.dataset.syncRole==='student')return;resetActivity();};
+document.addEventListener('click',e=>{if(document.body.dataset.syncRole!=='student')return;if(e.target.closest?.('.mb-prev,.mb-next,.mb-reset,.mb-finish')){e.preventDefault();e.stopImmediatePropagation();}},true);
 function drawGame(){cleanup();cleanup=()=>{};game.replaceChildren();cue('','');root.classList.toggle('v3-active',active&&!!pages[page].activity);leave.hidden=!active;updateFinish();const type=pages[page].activity;if(!active||!type){if(type==='paint'){const img=el('img','v3-flower-preview');img.src=assets.flower;img.alt='等待填色的笑臉花';img.style.filter='grayscale(1)';}return;}if(type==='paint')paintGame();else if(type==='scroll')scrollGame();else stampGame(type);}
-function render(){const p=pages[page];q('.mb-art').src=assets[p.art];q('.mb-art').alt=p.title;q('.mb-words').textContent=p.text;q('.mb-page').textContent=page===0?'封面':String(page).padStart(2,'0')+' / 08';q('.mb-prev').disabled=page===0;q('.mb-next').textContent=page===0?'翻開圖書 →':page===8?'回到封面 ↺':'下一頁 →';q('.mb-sound').textContent='聲效：'+(sound?'開':'關');q('.mb-invite').hidden=!p.activity||active;q('.mb-invite').textContent='打開大畫布';q('.mb-title-layer').replaceChildren();const title=document.createElement('div');if(page===0||page===8){title.className='mb-cover-heading'+(page===8?' mb-last-title':'');const k=document.createElement('div');k.className='mb-kicker';k.textContent=page===0?'一本可以摸一摸的藝術故事書':'故事未完・想像繼續';const h=document.createElement('h1');p.title.split('\n').forEach((line,i)=>{if(i)h.append(document.createElement('br'));h.append(document.createTextNode(line));});title.append(k,h);if(page===0){const sub=document.createElement('p');sub.textContent='從一朵花，走進重複的世界';title.append(sub);}}else{title.className='mb-heading';title.textContent=p.title;}q('.mb-title-layer').append(title);drawGame();}
+function render(){const p=pages[page];q('.mb-art').src=assets[p.art];q('.mb-art').alt=p.title;q('.mb-words').textContent=p.text;q('.mb-page').textContent=page===0?'封面':String(page).padStart(2,'0')+' / 08';q('.mb-prev').disabled=page===0;q('.mb-next').textContent=page===0?'翻開圖書 →':page===8?'回到封面 ↺':'下一頁 →';q('.mb-sound').textContent='聲效：'+(sound?'開':'關');q('.mb-invite').hidden=!p.activity||active;q('.mb-invite').textContent='打開大畫布';q('.mb-title-layer').replaceChildren();const title=document.createElement('div');if(page===0||page===8){title.className='mb-cover-heading'+(page===8?' mb-last-title':'');const k=document.createElement('div');k.className='mb-kicker';k.textContent=page===0?'一本可以摸一摸的藝術故事書':'故事未完・想像繼續';const h=document.createElement('h1');p.title.split('\n').forEach((line,i)=>{if(i)h.append(document.createElement('br'));h.append(document.createTextNode(line));});title.append(k,h);if(page===0){const sub=document.createElement('p');sub.textContent='從一朵花，走進重複的世界';title.append(sub);}}else{title.className='mb-heading';title.textContent=p.title;}q('.mb-title-layer').append(title);drawGame();updateTeacherControls();}
 function turn(next){cleanup();cleanup=()=>{};clearTimeout(flipTimer);q('.mb-flip')?.remove();page=next;active=false;tone('page');render();const f=el('div','mb-flip',q('.mb-sheet'));flipTimer=setTimeout(()=>f.remove(),670);save();}
-finish.onclick=()=>{const type=pages[page].activity;if(!['real','murakami','garden'].includes(type)||state[type].done)return;state[type].done=true;tone('finish');drawGame();spark(50,45);save();};q('.mb-next').onclick=()=>turn(page===8?0:page+1);q('.mb-prev').onclick=()=>{if(page>0)turn(page-1);};q('.mb-invite').onclick=()=>{active=true;tone('tap');render();save();if(!document.fullscreenElement&&root.requestFullscreen)root.requestFullscreen().catch(()=>{});};q('.mb-sound').onclick=()=>{sound=!sound;if(sound)tone('tap');q('.mb-sound').textContent='聲效：'+(sound?'開':'關');save();};q('.mb-fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await root.requestFullscreen();}catch(e){q('.mb-fullscreen').textContent='請使用瀏覽器全螢幕';}};document.addEventListener('fullscreenchange',()=>{q('.mb-fullscreen').textContent=document.fullscreenElement?'縮小圖書':'放大圖書';});
+finish.onclick=()=>{if(document.body.dataset.syncRole==='student')return;const type=pages[page].activity;if(!['real','murakami','garden'].includes(type)||state[type].done)return;state[type].done=true;tone('finish');drawGame();spark(50,45);save();};q('.mb-next').onclick=()=>{if(document.body.dataset.syncRole==='student')return;turn(page===8?0:page+1);};q('.mb-prev').onclick=()=>{if(document.body.dataset.syncRole==='student')return;if(page>0)turn(page-1);};q('.mb-invite').onclick=()=>{active=true;tone('tap');render();save();if(!document.fullscreenElement&&root.requestFullscreen)root.requestFullscreen().catch(()=>{});};q('.mb-sound').onclick=()=>{sound=!sound;if(sound)tone('tap');q('.mb-sound').textContent='聲效：'+(sound?'開':'關');save();};q('.mb-fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await root.requestFullscreen();}catch(e){q('.mb-fullscreen').textContent='請使用瀏覽器全螢幕';}};document.addEventListener('fullscreenchange',()=>{q('.mb-fullscreen').textContent=document.fullscreenElement?'縮小圖書':'放大圖書';});
 window.__marakamiGame={
 getSnapshot:()=>makeSnapshot(),
-applySnapshot:s=>{if(!s||s.version!==4)return;cleanup();cleanup=()=>{};restore({privateContent:s});render();},
-applyPaintSegments:segments=>{if(syncRuntime.paintApply)syncRuntime.paintApply(segments);},
-applyScroll:p=>{if(!p)return;const clamp=v=>Math.max(0,Math.min(1,Number(v)||0));state.scroll.left=clamp(p.left);state.scroll.right=clamp(p.right);state.scroll.value=(state.scroll.left+state.scroll.right)/2;state.scroll.done=!!p.done||(state.scroll.left>=1&&state.scroll.right>=1);if(syncRuntime.scrollApply)syncRuntime.scrollApply(state.scroll);else if(active&&pages[page].activity==='scroll')drawGame();},
+applySnapshot:s=>{if(!s||![4,5,6].includes(s.version))return;cleanup();cleanup=()=>{};restore({privateContent:s});render();},
+applyPaintSegments:(segments,gen)=>{if(gen!==state.paint.gen)return;if(syncRuntime.paintApply)syncRuntime.paintApply(segments,gen);},
+applyScroll:(p,gen)=>{if(!p||gen!==state.scroll.gen)return;const clamp=v=>Math.max(0,Math.min(1,Number(v)||0));state.scroll.left=clamp(p.left);state.scroll.right=clamp(p.right);state.scroll.value=(state.scroll.left+state.scroll.right)/2;state.scroll.done=!!p.done||(state.scroll.left>=1&&state.scroll.right>=1);if(syncRuntime.scrollApply)syncRuntime.scrollApply(state.scroll,gen);else if(active&&pages[page].activity==='scroll')drawGame();},
+applyStampAdd:(type,stamp,gen)=>{const target=state[type];if(!target||gen!==target.gen||!Array.isArray(stamp)||stamp.length<6)return false;const key=stamp.slice(0,6).join('|');if(target.stamps.some(s=>Array.isArray(s)&&s.slice(0,6).join('|')===key))return false;if(target.stamps.length>=120)return false;target.stamps.push(stamp);if(active&&pages[page].activity===type)drawGame();return true;},
+resetActivity:(type,gen)=>resetActivity(type,gen,false),
+getGeneration:type=>Number(state[type]?.gen)||0,
 getView:()=>({page,active,activity:pages[page].activity||null})
 };
 window.addEventListener('openai:set_globals',e=>{if(e.detail?.globals?.widgetState){cleanup();cleanup=()=>{};restore(e.detail.globals.widgetState);render();}});restore(window.openai?.widgetState);render();
@@ -218,7 +253,7 @@ window.addEventListener('openai:set_globals',e=>{if(e.detail?.globals?.widgetSta
 
 </script>
 
-<script id="marakami-sync-v4-controller">
+<script id="marakami-sync-v6-controller">
 (()=>{
   const SUPABASE_URL='https://sewveuojxsoqqkjubvrj.supabase.co';
   const SUPABASE_PUBLISHABLE_KEY='sb_publishable_am9k2R7dSgrPTRwT_WWwzQ_uKDZ_Rae';
@@ -226,7 +261,7 @@ window.addEventListener('openai:set_globals',e=>{if(e.detail?.globals?.widgetSta
   const deviceId=(crypto.randomUUID?.()||('dev-'+Math.random().toString(36).slice(2)+Date.now().toString(36)));
   let role=null,room=null,channel=null,ready=false;
   let sendChain=Promise.resolve();
-  let paintBatch=[],paintTimer=null,pendingScroll=null,scrollTimer=null;
+  let paintBatch=[],paintBatchGen=0,paintTimer=null,pendingScroll=null,pendingScrollGen=0,scrollTimer=null;
   const client=window.supabase?.createClient?.(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 
   function toast(msg){const t=$('sync-toast');if(!t)return;t.textContent=msg;t.classList.add('show');clearTimeout(t._timer);t._timer=setTimeout(()=>t.classList.remove('show'),1700);}
@@ -243,13 +278,13 @@ window.addEventListener('openai:set_globals',e=>{if(e.detail?.globals?.widgetSta
     if(paintTimer){clearTimeout(paintTimer);paintTimer=null;}
     if(!paintBatch.length)return;
     const segments=paintBatch.splice(0,paintBatch.length);
-    queueSend('paint-segments',{segments});
+    queueSend('paint-segments',{segments,gen:paintBatchGen});
   }
   function flushScrollNow(){
     if(scrollTimer){clearTimeout(scrollTimer);scrollTimer=null;}
     if(!pendingScroll)return;
-    const value=pendingScroll;pendingScroll=null;
-    queueSend('scroll-progress',value);
+    const value=pendingScroll,gen=pendingScrollGen;pendingScroll=null;
+    queueSend('scroll-progress',{...value,gen});
   }
   function sendSnapshot(snapshot){
     flushPaintNow();flushScrollNow();
@@ -258,15 +293,22 @@ window.addEventListener('openai:set_globals',e=>{if(e.detail?.globals?.widgetSta
 
   window.__marakamiSync={
     onLocalSnapshot(snapshot){sendSnapshot(snapshot);},
-    onLocalPaintSegment(segment){
+    onLocalPaintSegment(segment,gen){
       if(!ready||!Array.isArray(segment))return;
-      paintBatch.push(segment);
+      if(paintBatch.length&&paintBatchGen!==gen)flushPaintNow();paintBatchGen=gen;paintBatch.push(segment);
       if(!paintTimer)paintTimer=setTimeout(()=>{paintTimer=null;flushPaintNow();},28);
     },
-    onLocalScroll(value){
+    onLocalScroll(value,gen){
       if(!ready)return;
-      pendingScroll=value;
+      pendingScroll=value;pendingScrollGen=gen;
       if(!scrollTimer)scrollTimer=setTimeout(()=>{scrollTimer=null;flushScrollNow();},32);
+    },
+    onLocalStamp(type,stamp,gen){
+      if(!ready||!type||!Array.isArray(stamp))return;
+      queueSend('stamp-add',{type,stamp,gen});
+    },
+    onLocalReset(type,gen){
+      paintBatch=[];pendingScroll=null;if(!ready)return;queueSend('activity-reset',{type,gen});
     },
     flushPaint:flushPaintNow,
     flushScroll:flushScrollNow
@@ -275,28 +317,46 @@ window.addEventListener('openai:set_globals',e=>{if(e.detail?.globals?.widgetSta
   function applyRemote(fn){
     try{fn();}catch(err){console.warn('remote apply failed',err);}
   }
+  function stampKey(stamp){return Array.isArray(stamp)?stamp.slice(0,6).join('|'):'';}
+  function mergeStampLists(a,b){const out=[],seen=new Set();for(const list of [a,b]){for(const s of (Array.isArray(list)?list:[])){const k=stampKey(s);if(!k||seen.has(k))continue;seen.add(k);out.push(s);if(out.length>=120)break;}if(out.length>=120)break;}return out;}
+  function mergeMasks(a,b){try{const aa=atob(a||''),bb=atob(b||'');if(!aa)return b||'';if(!bb)return a||'';const n=Math.max(aa.length,bb.length),out=new Uint8Array(n);for(let i=0;i<n;i++)out[i]=(aa.charCodeAt(i)||0)|(bb.charCodeAt(i)||0);let s='';for(const v of out)s+=String.fromCharCode(v);return btoa(s);}catch(e){return b||a||'';}}
+  function mergeSnapshots(current,incoming,sourceRole){if(!current)return incoming;const merged=JSON.parse(JSON.stringify(incoming));merged.version=6;merged.state=merged.state||{};const cs=current.state||{};const isNewer=(a,b)=>(Number(a?.gen)||0)>(Number(b?.gen)||0);const isOlder=(a,b)=>(Number(a?.gen)||0)<(Number(b?.gen)||0);
+    for(const key of ['real','murakami','garden']){const cur=cs[key]||{},inc=merged.state[key]||{};if(isOlder(inc,cur))merged.state[key]=JSON.parse(JSON.stringify(cur));else if(!isNewer(inc,cur))merged.state[key]={...inc,gen:Number(inc.gen)||0,stamps:mergeStampLists(cur.stamps,inc.stamps),done:!!(cur.done||inc.done)};}
+    {const cur=cs.paint||{},inc=merged.state.paint||{};if(isOlder(inc,cur))merged.state.paint=JSON.parse(JSON.stringify(cur));else if(!isNewer(inc,cur))merged.state.paint={...inc,gen:Number(inc.gen)||0,mask:mergeMasks(cur.mask,inc.mask),percent:Math.max(Number(cur.percent)||0,Number(inc.percent)||0),done:!!(cur.done||inc.done)};}
+    {const cur=cs.scroll||{},inc=merged.state.scroll||{};if(isOlder(inc,cur))merged.state.scroll=JSON.parse(JSON.stringify(cur));else if(!isNewer(inc,cur)){const l=Math.max(Number(cur.left)||0,Number(inc.left)||0),r=Math.max(Number(cur.right)||0,Number(inc.right)||0);merged.state.scroll={...inc,gen:Number(inc.gen)||0,left:l,right:r,value:(l+r)/2,done:!!(cur.done||inc.done||(l>=1&&r>=1))};}}
+    if(sourceRole==='student'){merged.page=current.page;merged.active=current.active;merged.sound=current.sound;}return merged;}
 
   async function connect(code,nextRole){
     if(!client){alert('Supabase 程式庫未能載入，請檢查網絡後重新整理。');return false;}
-    role=nextRole;room=code;
+    role=nextRole;room=code;window.__marakamiSetSyncRole?.(role);
     $('sync-room-chip').textContent=room;
     $('sync-role-chip').textContent=role==='host'?'🖥️ 電子白板':'📱 學生 iPad';
     $('sync-bar').classList.remove('sync-hidden');
     setStatus('連線中');
 
-    channel=client.channel(`marakami-native-v4-${room}`,{config:{broadcast:{self:false}}});
+    channel=client.channel(`marakami-native-v6-${room}`,{config:{broadcast:{self:false}}});
     channel
       .on('broadcast',{event:'state-sync'},({payload:p})=>{
         if(!p||p.deviceId===deviceId||!p.snapshot)return;
-        applyRemote(()=>window.__marakamiGame?.applySnapshot?.(p.snapshot));
+        const current=window.__marakamiGame?.getSnapshot?.();
+        const merged=mergeSnapshots(current,p.snapshot,p.role);
+        applyRemote(()=>window.__marakamiGame?.applySnapshot?.(merged));
+      })
+      .on('broadcast',{event:'stamp-add'},({payload:p})=>{
+        if(!p||p.deviceId===deviceId||!p.type||!Array.isArray(p.stamp))return;
+        applyRemote(()=>window.__marakamiGame?.applyStampAdd?.(p.type,p.stamp,p.gen));
       })
       .on('broadcast',{event:'paint-segments'},({payload:p})=>{
         if(!p||p.deviceId===deviceId||!Array.isArray(p.segments))return;
-        applyRemote(()=>window.__marakamiGame?.applyPaintSegments?.(p.segments));
+        applyRemote(()=>window.__marakamiGame?.applyPaintSegments?.(p.segments,p.gen));
       })
       .on('broadcast',{event:'scroll-progress'},({payload:p})=>{
         if(!p||p.deviceId===deviceId)return;
-        applyRemote(()=>window.__marakamiGame?.applyScroll?.(p));
+        applyRemote(()=>window.__marakamiGame?.applyScroll?.(p,p.gen));
+      })
+      .on('broadcast',{event:'activity-reset'},({payload:p})=>{
+        if(!p||p.deviceId===deviceId||!p.type)return;
+        applyRemote(()=>window.__marakamiGame?.resetActivity?.(p.type,p.gen));
       })
       .on('broadcast',{event:'request-state'},({payload:p})=>{
         if(!p||p.deviceId===deviceId||role!=='host')return;
@@ -335,7 +395,7 @@ window.addEventListener('openai:set_globals',e=>{if(e.detail?.globals?.widgetSta
     $('sync-setup').classList.add('sync-hidden');
     toast('已加入同步房間');
   };
-  $('sync-solo-btn').onclick=()=>{$('sync-setup').classList.add('sync-hidden');$('sync-bar').classList.add('sync-hidden');};
+  $('sync-solo-btn').onclick=()=>{role='solo';window.__marakamiSetSyncRole?.('solo');$('sync-setup').classList.add('sync-hidden');$('sync-bar').classList.add('sync-hidden');};
   $('sync-enter-btn').onclick=()=>{$('sync-room').classList.add('sync-hidden');};
   $('sync-now-btn').onclick=()=>{
     if(!ready)return toast('目前未連線');
